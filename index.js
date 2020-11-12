@@ -6,7 +6,8 @@ const {
   appendSourceList,
   buildPolicyString,
   calculateConfig,
-  isIndexHtmlForTesting,
+  debug,
+  getEnvironmentFromRuntimeConfig,
   readConfig
 } = require('./lib/utils');
 
@@ -65,13 +66,14 @@ module.exports = {
   // FastBoot. This one is returned here as default configuration in order to make it
   // available at run time.
   config: function(environment, runConfig) {
+    // store run config to be available later
+    this._runConfig = runConfig;
+
     // calculate configuration and policy string
     // hook may be called more than once, but we only need to calculate once
     if (!this._config) {
-      let { app, project } = this;
-      let ui = project.ui;
-      let ownConfig = readConfig(project, environment);
-      let config = calculateConfig(environment, ownConfig, runConfig, ui);
+      let { app } = this;
+      let config = this._getConfigFor(environment);
 
       this._config = config;
       this._policyString = buildPolicyString(config.policy);
@@ -79,20 +81,7 @@ module.exports = {
       // generate config for test environment if app includes tests
       // Note: app is not defined for CLI commands
       if (app && app.tests) {
-        let ownConfigForTest = readConfig(project, 'test');
-        let runConfigForTest = project.config('test');
-        let configForTest = calculateConfig('test', ownConfigForTest, runConfigForTest, ui);
-
-        // add static nonce required for tests, but only if if script-src
-        // does not contain 'unsafe-inline'. if a nonce is present, browsers
-        // ignore the 'unsafe-inline' directive.
-        let scriptSrc = configForTest.policy['script-src'];
-        if (!(scriptSrc && scriptSrc.includes("'unsafe-inline'"))) {
-          appendSourceList(configForTest.policy, 'script-src', `'nonce-${STATIC_TEST_NONCE}'`);
-        }
-
-        // testem requires frame-src to run
-        configForTest.policy['frame-src'] = ["'self'"];
+        let configForTest = this._getConfigFor('test');
 
         this._configForTest = configForTest;
         this._policyStringForTest = buildPolicyString(configForTest.policy);
@@ -212,26 +201,47 @@ module.exports = {
   },
 
   contentFor: function(type, appConfig, existingContent) {
-    if (!this._config.enabled) {
+    // early skip not implemented contentFor hooks to avoid calculating
+    // configuration for them
+    const implementedContentForHooks = ['head', 'test-head', 'test-body'];
+    if (!implementedContentForHooks.includes(type)) {
       return;
     }
 
-    // inject CSP meta tag
+    const isTestIndexHtml =
+      type.startsWith('test-') ||
+      getEnvironmentFromRuntimeConfig(existingContent) === 'test';
+    const environment = isTestIndexHtml ? 'test' : appConfig.environment;
+    debug (
+      `Processing contentFor hook for ${type} of ${isTestIndexHtml ? 'index.html' : 'tests/index.html'}`
+    );
+
+    const config = this._getConfigFor(environment);
+    if (!config.enabled) {
+      debug('Skip because not enabled in configuration');
+      return;
+    }
+
+    // inject CSP meta tag in
     if (
-      // if addon is configured to deliver CSP by meta tag
-      ( type === 'head' && this._config.delivery.indexOf('meta') !== -1 ) ||
-      // ensure it's injected in tests/index.html to ensure consistent test results
+      // 1. `head` slot of `index.html` and
+      type === 'head' && !isTestIndexHtml ||
+      // 2. `test-head` slot of `tests/index.html`
       type === 'test-head'
     ) {
-      // skip head slot for tests/index.html to prevent including the CSP meta tag twice
-      if (type === 'head' && isIndexHtmlForTesting(existingContent)) {
+      // skip if not configured to deliver via meta tag
+      if (!config.delivery.includes('meta')) {
+        debug(
+          `Skip because not configured to deliver CSP via meta tag`
+        );
         return;
       }
 
-      let config = type === 'head' ? this._config : this._configForTest;
+      debug(`Inject meta tag into ${type}`);
+
       let policyString = type === 'head' ? this._policyString : this._policyStringForTest;
 
-      if (this._config.reportOnly && this._config.delivery.indexOf('meta') !== -1) {
+      if (config.reportOnly && config.delivery.indexOf('meta') !== -1) {
         this.ui.writeWarnLine(
           'Content Security Policy does not support report only mode if delivered via meta element. ' +
           "Either set `reportOnly` to `false` or remove `'meta' from `delivery` in " +
@@ -314,4 +324,45 @@ module.exports = {
 
   // holds calculated policy string for test environment
   _policyStringForTest: null,
+
+  // holds the run config
+  // It's set in `config` hook and used later
+  _runConfig: null,
+
+  // returns the config for a given environment and delivery method
+  _getConfigFor(environment) {
+    debug(`Calculate configuration for environment ${environment}`);
+
+    const { project } = this;
+    const { ui } = project;
+    const ownConfig = readConfig(project, environment);
+    const runConfig = this._runConfig;
+    debug(`Own configuration is: ${JSON.stringify(ownConfig)}`);
+    debug(`Run-time configuration is: ${JSON.stringify(runConfig)}`);
+
+    const config = calculateConfig(environment, ownConfig, runConfig, ui);
+    debug(`Calculated configuration: ${JSON.stringify(config)}`);
+
+    if (environment === 'test') {
+      debug('Manipulating configuration to fit test specific needs');
+
+      // add static nonce required for tests, but only if if script-src
+      // does not contain 'unsafe-inline'. if a nonce is present, browsers
+      // ignore the 'unsafe-inline' directive.
+      let scriptSrc = config.policy['script-src'];
+      if (!(scriptSrc && scriptSrc.includes("'unsafe-inline'"))) {
+        appendSourceList(config.policy, 'script-src', `'nonce-${STATIC_TEST_NONCE}'`);
+      }
+
+      // testem requires frame-src to run
+      config.policy['frame-src'] = ["'self'"];
+
+      // enforce delivery through meta
+      config.delivery.push('meta');
+
+      debug(`Configuration adjusted for test needs is: ${JSON.stringify(config)}`);
+    }
+
+    return config;
+  },
 };
