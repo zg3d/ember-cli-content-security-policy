@@ -71,31 +71,15 @@ module.exports = {
     // store run config to be available later
     this._runConfig = runConfig;
 
-    // calculate configuration and policy string
-    // hook may be called more than once, but we only need to calculate once
-    if (!this._config) {
-      let { app } = this;
-      let config = this._getConfigFor(environment);
-
-      this._config = config;
-      this._policyString = buildPolicyString(config.policy);
-
-      // generate config for test environment if app includes tests
-      // Note: app is not defined for CLI commands
-      if (app && app.tests) {
-        let configForTest = this._getConfigFor('test');
-
-        this._configForTest = configForTest;
-        this._policyStringForTest = buildPolicyString(configForTest.policy);
-      }
-    }
+    let config = this._getConfigFor(environment);
+    let policyString = buildPolicyString(config.policy);
 
     // CSP header should only be set in FastBoot if
     // - addon is enabled and
     // - configured to deliver CSP via header and
     // - application has ember-cli-fastboot dependency.
-    this._needsFastBootSupport = this._config.enabled &&
-      this._config.delivery.includes('header') &&
+    this._needsFastBootSupport = config.enabled &&
+      config.delivery.includes('header') &&
       this.project.findAddonByName('ember-cli-fastboot') !== null;
 
     // Run-time configuration is only needed for FastBoot support.
@@ -108,8 +92,8 @@ module.exports = {
     // and the report only flag, which is determines the header name.
     return {
       'ember-cli-content-security-policy': {
-        policy: this._policyString,
-        reportOnly: this._config.reportOnly,
+        policy: policyString,
+        reportOnly: config.reportOnly,
       },
     };
   },
@@ -252,7 +236,7 @@ module.exports = {
     }
 
     // inject event listener needed for test support
-    if (type === 'test-body' && this._config.failTests) {
+    if (type === 'test-body' && config.failTests) {
       let qunitDependency = (new VersionChecker(this.project)).for('qunit');
       if (qunitDependency.exists() && qunitDependency.lt('2.9.2')) {
         this.ui.writeWarnLine(
@@ -313,9 +297,6 @@ module.exports = {
 
   // holds calculated policy string
   _policyString: null,
-
-  // holds calculated policy string for test environment
-  _policyStringForTest: null,
 
   // holds the run config
   // It's set in `config` hook and used later
