@@ -285,18 +285,9 @@ module.exports = {
     return tree;
   },
 
-  // holds configuration for this addon
-  _config: null,
-
-  // holds configuration for test environment for this addon
-  _configForTest: null,
-
   // controls if code needed to set CSP header in fastboot
   // is included in build output
   _needsFastBootSupport: null,
-
-  // holds calculated policy string
-  _policyString: null,
 
   // holds the run config
   // It's set in `config` hook and used later
