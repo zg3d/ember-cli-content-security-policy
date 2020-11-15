@@ -179,7 +179,7 @@ module.exports = {
   contentFor: function(type, appConfig, existingContent) {
     // early skip not implemented contentFor hooks to avoid calculating
     // configuration for them
-    const implementedContentForHooks = ['head', 'test-head', 'test-body'];
+    const implementedContentForHooks = ['head', 'test-head', 'test-body', 'test-body-footer'];
     if (!implementedContentForHooks.includes(type)) {
       return;
     }

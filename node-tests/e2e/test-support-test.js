@@ -36,33 +36,70 @@ describe('e2e: provides test support', function() {
     }
 
     await testProject.addOwnPackageAsDevDependency('ember-cli-content-security-policy');
+  });
 
-    // create a simple rendering tests that violates default CSP by using
-    // inline JavaScript
-    let testFolder = 'tests/integration/components';
-    let testFile = `${testFolder}/my-component-test.js`;
-    await fs.ensureDir(`${testProject.path}/${testFolder}`);
-    await testProject.writeFile(
-      testFile,
-      `
-        import { module, test } from 'qunit';
-        import { setupRenderingTest } from 'ember-qunit';
-        import { render } from '@ember/test-helpers';
-        import hbs from 'htmlbars-inline-precompile';
+  describe('does not cause test failures on new project', async function() {
+    it('does not break untouched application', async function() {
+      await testProject.runEmberCommand('test');
 
-        module('Integration | Component | my-component', function(hooks) {
-          setupRenderingTest(hooks);
+      // No need to assert anything. Test scenario is fulfilled as long as the
+      // command does not throw.
+    });
 
-          test('it renders', async function(assert) {
-            await render(hbs\`<div style='display: none;'></div>\`);
-            assert.ok(true);
-          });
-        });
-      `
-    );
+    it('does not break untouched addon', async function() {
+      // Global test project is an application. To assert against an addon
+      // we need to create another test project.
+      const testProject = new TestProject({
+        projectRoot: path.join(__dirname, '../..'),
+      });
+
+      await testProject.createEmberAddon();
+      await testProject.addOwnPackageAsDevDependency('ember-cli-content-security-policy');
+
+      // Remove ember-auto-import dependency as it violates the default CSP.
+      // See global `before` hook of this test file for more context.
+      try {
+        await testProject.runCommand('yarn', 'remove', 'ember-auto-import');
+      } catch(error) {
+        // Trying to remove ember-auto-import dependency may fail cause that
+        // dependency is not present for older Ember CLI versions.
+      }
+
+      await testProject.runEmberCommand('test');
+
+      // No need to assert anything. Test scenario is fulfilled as long as the
+      // command does not throw.
+    });
   });
 
   describe('causes tests to fail on CSP violations', async function() {
+    const folderForIntegrationTests = 'tests/integration/components';
+    const fileViolatingCSP = `${folderForIntegrationTests}/my-component-test.js`;
+
+    beforeEach(async function() {
+      // create a simple rendering tests that violates default CSP by using
+      // inline JavaScript
+      await fs.ensureDir(path.join(testProject.path, folderForIntegrationTests));
+      await testProject.writeFile(
+        fileViolatingCSP,
+        `
+          import { module, test } from 'qunit';
+          import { setupRenderingTest } from 'ember-qunit';
+          import { render } from '@ember/test-helpers';
+          import hbs from 'htmlbars-inline-precompile';
+
+          module('Integration | Component | my-component', function(hooks) {
+            setupRenderingTest(hooks);
+
+            test('it renders', async function(assert) {
+              await render(hbs\`<div style='display: none;'></div>\`);
+              assert.ok(true);
+            });
+          });
+        `
+      );
+    });
+
     afterEach(async function() {
       await removeConfig(testProject);
     });
