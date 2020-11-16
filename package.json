@@ -60,11 +60,13 @@
     "execa": "^4.1.0",
     "fs-extra": "^9.0.0",
     "loader.js": "^4.7.0",
+    "lodash": "^4.17.20",
     "mocha": "^7.0.0",
     "qunit-dom": "^1.0.0",
     "release-it": "^13.0.2",
     "release-it-lerna-changelog": "^2.0.0",
-    "request": "^2.88.0"
+    "request": "^2.88.0",
+    "semver": "^7.3.2"
   },
   "engines": {
     "node": "10.* || >= 12"
