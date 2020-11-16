@@ -26,26 +26,53 @@ function extractRunTimeConfig(html) {
   return JSON.parse(decodeURIComponent(encodedConfig));
 }
 
+async function readPackageJson(testProject) {
+  return JSON.parse(
+    await testProject.readFile('package.json')
+  );
+}
+
+function getWorkspachePackageJson(testProject) {
+  const workspaceRoot = path.join(testProject.path, '..', '..');
+  return path.join(workspaceRoot, 'package.json');
+}
+
+function readWorkspacePackageJson(testProject) {
+  return JSON.parse(
+    fs.readFileSync(getWorkspachePackageJson(testProject), { encoding: 'utf-8' })
+  );
+}
+
+function writeWorkspacePackageJson(testProject, content) {
+  fs.writeFileSync(getWorkspachePackageJson(testProject), JSON.stringify(content));
+}
+
 async function setResolutionForDependency(testProject, resolutions) {
   // resolutions must be defined in package.json at workspace root
-  const workspaceRoot = path.join(testProject.path, '..', '..');
-  const packageJsonFile = path.join(workspaceRoot, 'package.json');
-  const packageJsonContent = JSON.parse(
-    fs.readFileSync(packageJsonFile, { encoding: 'utf-8' })
-  );
+  const packageJson = readWorkspacePackageJson(testProject);
 
-  if (!packageJsonContent.resolutions) {
-    packageJsonContent.resolutions = {};
+  if (!packageJson.resolutions) {
+    packageJson.resolutions = {};
   }
-  Object.assign(packageJsonContent.resolutions, resolutions);
+  Object.assign(packageJson.resolutions, resolutions);
 
-  fs.writeFileSync(packageJsonFile, JSON.stringify(packageJsonContent));
+  writeWorkspacePackageJson(testProject, packageJson);
+}
+
+async function removeResolutionsForDependencies(testProject) {
+  const packageJson = readWorkspacePackageJson(testProject);
+
+  delete packageJson.resolutions;
+
+  writeWorkspacePackageJson(testProject, packageJson);
 }
 
 module.exports = {
   CSP_META_TAG_REG_EXP,
   extractRunTimeConfig,
+  readPackageJson,
   removeConfig,
+  removeResolutionsForDependencies,
   setConfig,
   setResolutionForDependency,
 };

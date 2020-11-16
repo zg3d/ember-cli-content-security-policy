@@ -8,8 +8,42 @@ const {
   removeConfig,
   setConfig,
   setResolutionForDependency,
+  readPackageJson,
+  removeResolutionsForDependencies,
 } = require('../utils');
 const path = require('path');
+const semverGtr = require('semver/ranges/gtr');
+
+// Depending on Ember CLI version used some manual adjustments are needed even
+// for newly created projects to not violate the default CSP.
+async function adjustForCompatibility(testProject) {
+  // Ember Auto Import is a default dependency of new Ember projects. It uses an `eval` function
+  // internally unless configured to not do so. This violates the default CSP and causes an
+  // `EvalError` to be thrown. This uncatched error will cause the tests to fail - regardless
+  // of our custom test support.
+  // To avoid this issue we uninstall Ember Auto Import for these tests. This can be removed
+  // as soon as Ember CLI Content Security Policy works out of the box with Ember Auto Import.
+  try {
+    await testProject.runCommand('yarn', 'remove', 'ember-auto-import');
+  } catch(error) {
+    // Trying to remove ember-auto-import dependency may fail cause that dependency is not
+    // present for older Ember CLI versions.
+  }
+
+  // Older Ember CLI versions install a QUnit version, which violates the
+  // default CSP. We ask consumer to upgrade QUnit to a more recent QUnit
+  // version in a warning that is logged if QUnit version is less than
+  // 2.9.2. The issue was fixed in Ember CLI 3.10 by upgrading ember-qunit
+  // to ^4.4.1.
+  // We need to upgrade QUnit in tests as well if an Ember CLI version less
+  // than 3.10 is used.
+  const packageJson = await readPackageJson(testProject);
+  const emberCliVersionUsed = packageJson.devDependencies['ember-cli'];
+  if (semverGtr('3.10.0', emberCliVersionUsed)) {
+    await setResolutionForDependency(testProject, { qunit: '>= 2.9.2' });
+    await testProject.runCommand('yarn', 'install');
+  }
+}
 
 describe('e2e: provides test support', function() {
   this.timeout(300000);
@@ -22,32 +56,12 @@ describe('e2e: provides test support', function() {
     });
 
     await testProject.createEmberApp();
-
-    // Ember Auto Import is a default dependency of new Ember projects. It uses an `eval` function
-    // internally unless configured to not do so. This violates the default CSP and causes an
-    // `EvalError` to be thrown. This uncatched error will cause the tests to fail - regardless
-    // of our custom test support.
-    // To avoid this issue we uninstall Ember Auto Import for these tests. This can be removed
-    // as soon as Ember CLI Content Security Policy works out of the box with Ember Auto Import.
-    try {
-      await testProject.runCommand('yarn', 'remove', 'ember-auto-import');
-    } catch(error) {
-      // Trying to remove ember-auto-import dependency may fail cause that dependency is not
-      // present for older Ember CLI versions.
-    }
-
-    // Older Ember CLI versions install a QUnit version, which violates the
-    // default CSP. In most cases the outdated QUnit version is installed as an
-    // indirect dependency through ember-cli-qunit package, which was part of
-    // default blueprints until Ember 3.4. We ask consumer to upgrade QUnit to
-    // a more recent QUnit version in a warning that we log in that case.
-    // We need to simulate this in our tests as well.
-    //
-    // TODO: Only add resolution if running for old Ember CLI version.
-    await setResolutionForDependency(testProject, { qunit: '>= 2.9.2' });
-    await testProject.runCommand('yarn', 'install');
-
     await testProject.addOwnPackageAsDevDependency('ember-cli-content-security-policy');
+    await adjustForCompatibility(testProject);
+  });
+
+  after(async function() {
+    await removeResolutionsForDependencies(testProject);
   });
 
   describe('does not cause test failures on new project', async function() {
@@ -67,22 +81,7 @@ describe('e2e: provides test support', function() {
 
       await testProject.createEmberAddon();
       await testProject.addOwnPackageAsDevDependency('ember-cli-content-security-policy');
-
-      // Remove ember-auto-import dependency as it violates the default CSP.
-      // See global `before` hook of this test file for more context.
-      try {
-        await testProject.runCommand('yarn', 'remove', 'ember-auto-import');
-      } catch(error) {
-        // Trying to remove ember-auto-import dependency may fail cause that
-        // dependency is not present for older Ember CLI versions.
-      }
-
-      // Enforce recent enought qunit version.
-      // See global `before` hook of this test file for more context.
-      //
-      // TODO: Only add resolution if running for old Ember CLI version.
-      await setResolutionForDependency(testProject, { qunit: '>= 2.9.2' });
-      await testProject.runCommand('yarn', 'install');
+      await adjustForCompatibility(testProject);
 
       await testProject.runEmberCommand('test');
 
