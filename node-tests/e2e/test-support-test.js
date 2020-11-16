@@ -5,13 +5,11 @@ const denodeify = require('denodeify');
 const request = denodeify(require('request'));
 const {
   CSP_META_TAG_REG_EXP,
-  getInstalledVersionOfDependency,
-  patchPackageJson,
   removeConfig,
-  setConfig
+  setConfig,
+  setResolutionForDependency,
 } = require('../utils');
 const path = require('path');
-const semver = require('semver');
 
 describe('e2e: provides test support', function() {
   this.timeout(300000);
@@ -44,12 +42,10 @@ describe('e2e: provides test support', function() {
     // default blueprints until Ember 3.4. We ask consumer to upgrade QUnit to
     // a more recent QUnit version in a warning that we log in that case.
     // We need to simulate this in our tests as well.
-    const qunitVersion = await getInstalledVersionOfDependency(testProject, 'qunit');
-    if (!semver.satisfies(qunitVersion, '>= 2.9.2')) {
-      // enforce newer version using yarn resolutions feature
-      await patchPackageJson(testProject, { resolutions: { qunit: '2.9.2' }});
-      await testProject.runCommand('yarn', 'install');
-    }
+    //
+    // TODO: Only add resolution if running for old Ember CLI version.
+    await setResolutionForDependency(testProject, { qunit: '>= 2.9.2' });
+    await testProject.runCommand('yarn', 'install');
 
     await testProject.addOwnPackageAsDevDependency('ember-cli-content-security-policy');
   });
@@ -83,11 +79,10 @@ describe('e2e: provides test support', function() {
 
       // Enforce recent enought qunit version.
       // See global `before` hook of this test file for more context.
-      const qunitVersion = await getInstalledVersionOfDependency(testProject, 'qunit');
-      if (!semver.satisfies(qunitVersion, '>= 2.9.2')) {
-        await patchPackageJson(testProject, { resolutions: { qunit: '2.9.2' }});
-        await testProject.runCommand('yarn', 'install');
-      }
+      //
+      // TODO: Only add resolution if running for old Ember CLI version.
+      await setResolutionForDependency(testProject, { qunit: '>= 2.9.2' });
+      await testProject.runCommand('yarn', 'install');
 
       await testProject.runEmberCommand('test');
 

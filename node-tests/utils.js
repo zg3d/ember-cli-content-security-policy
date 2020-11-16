@@ -1,4 +1,5 @@
-const { merge } = require('lodash');
+const path = require('path');
+const fs = require('fs');
 
 const CONFIG_PATH = 'config/content-security-policy.js';
 const CSP_META_TAG_REG_EXP = /<meta http-equiv="Content-Security-Policy" content="(.*)">/i;
@@ -25,30 +26,26 @@ function extractRunTimeConfig(html) {
   return JSON.parse(decodeURIComponent(encodedConfig));
 }
 
-async function getInstalledVersionOfDependency(testProject, dependency) {
-  const { stdout: yarnWhyOutput } = await testProject.runCommand('yarn', 'why', dependency);
-  const matches = yarnWhyOutput.match(
-    new RegExp(
-      `=> Found "${dependency}@(\\d+.\\d+.\\d+)"`
-    )
+async function setResolutionForDependency(testProject, resolutions) {
+  // resolutions must be defined in package.json at workspace root
+  const workspaceRoot = path.join(testProject.path, '..', '..');
+  const packageJsonFile = path.join(workspaceRoot, 'package.json');
+  const packageJsonContent = JSON.parse(
+    fs.readFileSync(packageJsonFile, { encoding: 'utf-8' })
   );
-  const [, version] = matches;
-  return version;
-}
 
-async function patchPackageJson(testProject, patch) {
-  const packageJson = JSON.parse(
-    await testProject.readFile('package.json')
-  );
-  merge(packageJson, patch);
-  await testProject.writeFile('package.json', JSON.stringify(packageJson));
+  if (!packageJsonContent.resolutions) {
+    packageJsonContent.resolutions = {};
+  }
+  Object.assign(packageJsonContent.resolutions, resolutions);
+
+  fs.writeFileSync(packageJsonFile, JSON.stringify(packageJsonContent));
 }
 
 module.exports = {
   CSP_META_TAG_REG_EXP,
   extractRunTimeConfig,
-  getInstalledVersionOfDependency,
-  patchPackageJson,
   removeConfig,
   setConfig,
+  setResolutionForDependency,
 };

@@ -60,7 +60,6 @@
     "execa": "^4.1.0",
     "fs-extra": "^9.0.0",
     "loader.js": "^4.7.0",
-    "lodash": "^4.17.20",
     "mocha": "^7.0.0",
     "qunit-dom": "^1.0.0",
     "release-it": "^13.0.2",
